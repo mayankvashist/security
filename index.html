@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Credential Display</title>
+    <style>
+        .masked {
+            -webkit-text-security: disc;
+            text-security: disc;
+        }
+
+        .unmasked {
+            -webkit-text-security: none;
+            text-security: none;
+        }
+
+        body, html {
+            height: 100%;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f0f0f0;
+        }
+        .iframe-container {
+            width: 70%;
+            height: 90%;
+            border: 1px solid #ccc;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            background-color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+
+<div>
+    <input type="text" name="test" placeholder="test" class="masked">
+    <label for="email">Email:</label>
+    <input type="text" id="email" value="mayank.s@hetcash.com" readonly>
+</div>
+
+<div>
+    <label for="password">Password:</label>
+    <input type="text" id="password" value="qwer123#" class="masked" readonly>
+    <button id="copyButton">Copy Password</button>
+</div>
+
+<div class="iframe-container" id="iframeContainer">
+    <input type="text" name="test" placeholder="test" class="masked">
+    <iframe id="loginIframe" src="https://app.clickadilla.com/login"></iframe>
+</div>
+
+<script>
+let token;
+let originalPassword = document.getElementById('password').value;
+let maskedPassword = '*'.repeat(originalPassword.length);
+
+fetch('http://localhost:3000/generate-token')
+    .then(response => response.json())
+    .then(data => {
+        token = data.token;
+    });
+
+document.getElementById('copyButton').addEventListener('click', function() {
+    const passwordInput = document.getElementById('password');
+
+    // Store the token and password in session storage
+    sessionStorage.setItem('password', maskedPassword);
+    sessionStorage.setItem('token', token);
+
+    // Generate a unique session ID
+    const sessionId = crypto.randomUUID();
+    sessionStorage.setItem('sessionId', sessionId);
+
+    // Copy a placeholder text with session ID and token to clipboard
+    const placeholder = `COPY_PASSWORD#${sessionId}#${token}`;
+    navigator.clipboard.writeText(placeholder).then(() => {
+        alert('Password placeholder copied to clipboard. Please paste it only within the same browser tab.');
+    }).catch(err => {
+        console.error('Failed to copy: ', err);
+    });
+});
+
+const iframeContainer = document.getElementById('iframeContainer');
+let isHovering = false;
+
+iframeContainer.addEventListener('mouseenter', function() {
+    isHovering = true;
+    // Set the password to unmasked in session storage
+    sessionStorage.setItem('password', originalPassword);
+});
+
+iframeContainer.addEventListener('mouseleave', function() {
+    isHovering = false;
+    // Set the password back to masked in session storage
+    sessionStorage.setItem('password', maskedPassword);
+});
+
+document.addEventListener('paste', function(event) {
+    const pastedData = event.clipboardData.getData('text');
+    const [placeholder, pastedSessionId, pastedToken] = pastedData.split('#');
+
+    if (placeholder === 'COPY_PASSWORD') {
+        const storedPassword = sessionStorage.getItem('password');
+        const storedToken = sessionStorage.getItem('token');
+        const storedSessionId = sessionStorage.getItem('sessionId');
+
+        if (pastedToken === storedToken && pastedSessionId === storedSessionId) {
+            fetch('http://localhost:3000/validate-token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ token: storedToken })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.valid) {
+                    // Clear the token from session storage
+                    sessionStorage.removeItem('password');
+                    sessionStorage.removeItem('token');
+                    sessionStorage.removeItem('sessionId');
+
+                    // Insert the actual password into the target input field
+                    const targetInput = event.target;
+                    
+                    // Check if the paste is happening inside the iframe container
+                    if (isHovering && targetInput) {
+                        targetInput.value = storedPassword;
+                    }
+                } else {
+                    alert('Invalid token. Password cannot be used.');
+                }
+            });
+        } else {
+            alert('Invalid password or token. Please copy the password again.');
+        }
+    } else {
+        alert('Invalid placeholder. Please copy the password again.');
+    }
+});
+</script>
+
+</body>
+</html>
